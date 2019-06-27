@@ -17,6 +17,7 @@
 package cmd
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -38,6 +39,14 @@ var adminHealFlags = []cli.Flag{
 		Name:  "scan",
 		Usage: "select the healing scan mode (normal/deep)",
 		Value: scanNormalMode,
+	},
+	cli.StringSliceFlag{
+		Name:  "endpoints, e",
+		Usage: "heal the object on the specified endpoint, Please make sure data is missing on the endpoint",
+	},
+	cli.BoolFlag{
+		Name:  "single-object, S",
+		Usage: "heal the exact specified object",
 	},
 	cli.BoolFlag{
 		Name:  "recursive, r",
@@ -168,10 +177,69 @@ func mainAdminHeal(ctx *cli.Context) error {
 	bucket, prefix := splits[1], splits[2]
 
 	opts := madmin.HealOpts{
-		ScanMode:  transformScanArg(ctx.String("scan")),
-		Remove:    ctx.Bool("remove"),
-		Recursive: ctx.Bool("recursive"),
-		DryRun:    ctx.Bool("dry-run"),
+		ScanMode:   transformScanArg(ctx.String("scan")),
+		Remove:     ctx.Bool("remove"),
+		Recursive:  ctx.Bool("recursive"),
+		DryRun:     ctx.Bool("dry-run"),
+		DisksIndex: make(map[int][]int),
+	}
+	if es := ctx.StringSlice("endpoints"); len(es) != 0 {
+		sets := make(map[string]map[string][2]int)
+		serversInfo, e := client.ServerInfo()
+		if e != nil {
+			return e
+		}
+		for _, info := range serversInfo {
+			disksIndex := make(map[string][2]int)
+			if info.Data == nil {
+				continue
+			}
+			for j, drives := range info.Data.StorageInfo.Backend.Sets {
+				for k, drive := range drives {
+					disksIndex[drive.Endpoint] = [2]int{j, k}
+				}
+			}
+			sets[info.Addr] = disksIndex
+		}
+		for _, endpoint := range ctx.StringSlice("endpoints") {
+			var ip, port, path string
+			if idx := strings.Index(endpoint, "/"); idx != -1 {
+				path = endpoint[idx:]
+				endpoint = strings.TrimSuffix(endpoint, path)
+			}
+			if idx := strings.Index(endpoint, ":"); idx != -1 && idx < len(endpoint) {
+				port = endpoint[idx+1:]
+				endpoint = endpoint[:idx]
+			}
+			if port == "" {
+				port = "9000"
+			}
+			ip = endpoint
+			host := fmt.Sprintf("%s:%s", ip, port)
+			idx, ok := sets[host]
+			if !ok {
+				return fmt.Errorf("invalid endpoint %s, should be follow the pattern like 127.0.0.1:9000/data/path", endpoint)
+			}
+			if path == "" {
+				for _, i := range idx {
+					opts.DisksIndex[i[0]] = append(opts.DisksIndex[i[0]], i[1])
+				}
+			} else {
+				i, ok := idx[path]
+				if !ok {
+					return fmt.Errorf("invalid path in endpoint %s, should be follow the pattern like 127.0.0.1:9000/data/path", endpoint)
+				}
+				opts.DisksIndex[i[0]] = append(opts.DisksIndex[i[0]], i[1])
+			}
+		}
+	}
+
+	singleObject := ctx.Bool("single-object")
+	if singleObject {
+		res, err := client.HealObject(bucket, prefix, opts)
+		errorIf(probe.NewError(err), "Failed to heal single object %s/%s", bucket, prefix)
+		fmt.Printf("%+v\n", res)
+		return nil
 	}
 
 	forceStart := ctx.Bool("force-start")
