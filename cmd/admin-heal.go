@@ -18,6 +18,8 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -27,6 +29,7 @@ import (
 	"github.com/minio/mc/pkg/console"
 	"github.com/minio/mc/pkg/probe"
 	"github.com/minio/minio/pkg/madmin"
+	homedir "github.com/mitchellh/go-homedir"
 )
 
 const (
@@ -47,6 +50,19 @@ var adminHealFlags = []cli.Flag{
 	cli.BoolFlag{
 		Name:  "single-object, S",
 		Usage: "heal the exact specified object",
+	},
+	cli.StringFlag{
+		Name:  "object-list, l",
+		Usage: "heal all objects on the list",
+	},
+	cli.IntFlag{
+		Name:  "qps",
+		Usage: "it limit the qps per server",
+		Value: 1,
+	},
+	cli.StringFlag{
+		Name:  "work-dir",
+		Usage: "working directory when healing objects in list, used to record healing progress, default is ~/.mc",
 	},
 	cli.BoolFlag{
 		Name:  "recursive, r",
@@ -196,11 +212,19 @@ func mainAdminHeal(ctx *cli.Context) error {
 			}
 			for j, drives := range info.Data.StorageInfo.Backend.Sets {
 				for k, drive := range drives {
-					disksIndex[drive.Endpoint] = [2]int{j, k}
+					u, err := url.Parse(drive.Endpoint)
+					if err != nil {
+						return err
+					}
+					if u.Host != info.Addr {
+						continue
+					}
+					disksIndex[u.Path] = [2]int{j, k}
 				}
 			}
 			sets[info.Addr] = disksIndex
 		}
+		fmt.Println(len(sets), sets)
 		for _, endpoint := range ctx.StringSlice("endpoints") {
 			var ip, port, path string
 			if idx := strings.Index(endpoint, "/"); idx != -1 {
@@ -232,6 +256,35 @@ func mainAdminHeal(ctx *cli.Context) error {
 				opts.DisksIndex[i[0]] = append(opts.DisksIndex[i[0]], i[1])
 			}
 		}
+	}
+
+	objectList := ctx.String("object-list")
+	// heal all objects list in the file
+	if objectList != "" {
+		workDir := ctx.String("work-dir")
+		if workDir == "" {
+			homeDir, e := homedir.Dir()
+			if e != nil {
+				return e
+			}
+			workDir = path.Join(homeDir, globalMCConfigDir)
+		}
+		clients, err := newAdminClients(aliasedURL)
+		if err != nil {
+			fatalIf(err.Trace(aliasedURL), "Cannot initialize admin client.")
+			return nil
+		}
+		functions := make([]objectHandleFunc, len(clients))
+		for idx := range clients {
+			c := clients[idx]
+			functions[idx] = func(bucket, key string) error {
+				res, err := c.HealObject(bucket, key, opts)
+				fmt.Printf(".")
+				// fmt.Printf("%+v\n", res)
+				return err
+			}
+		}
+		return healObjectList(workDir, objectList, functions, ctx.Int("qps"))
 	}
 
 	singleObject := ctx.Bool("single-object")

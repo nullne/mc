@@ -133,6 +133,49 @@ func newAdminClient(aliasedURL string) (*madmin.AdminClient, *probe.Error) {
 	return s3Client, nil
 }
 
+// newAdminClients returns clients to all servers
+func newAdminClients(aliasedURL string) ([]*madmin.AdminClient, *probe.Error) {
+	alias, urlStrFull, hostCfg, err := expandAlias(aliasedURL)
+	if err != nil {
+		return nil, err.Trace(aliasedURL)
+	}
+	// Verify if the aliasedURL is a real URL, fail in those cases
+	// indicating the user to add alias.
+	if hostCfg == nil && urlRgx.MatchString(aliasedURL) {
+		return nil, errInvalidAliasedURL(aliasedURL).Trace(aliasedURL)
+	}
+
+	if hostCfg == nil {
+		return nil, probe.NewError(fmt.Errorf("The specified alias: %s not found", urlStrFull))
+	}
+
+	s3Config := newS3Config(urlStrFull, hostCfg)
+
+	s3Client, err := s3AdminNew(s3Config)
+	if err != nil {
+		return nil, err.Trace(alias, urlStrFull)
+	}
+
+	servers, e := s3Client.ServerInfo()
+	if e != nil {
+		return nil, probe.NewError(e)
+	}
+	u, _ := url.Parse(urlStrFull)
+	u.Path = ""
+	// check the errors
+	var clients []*madmin.AdminClient
+	for _, s := range servers {
+		u.Host = s.Addr
+		s3Config.HostURL = u.String()
+		client, e := s3AdminNew(s3Config)
+		if e != nil {
+			return nil, e
+		}
+		clients = append(clients, client)
+	}
+	return clients, nil
+}
+
 // s3AdminNew returns an initialized minioAdmin structure. If debug is enabled,
 // it also enables an internal trace transport.
 var s3AdminNew = newAdminFactory()
