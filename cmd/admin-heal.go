@@ -17,11 +17,16 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/minio/cli"
@@ -199,6 +204,7 @@ func mainAdminHeal(ctx *cli.Context) error {
 		DryRun:     ctx.Bool("dry-run"),
 		DisksIndex: make(map[int][]int),
 	}
+	endpoints := make(map[string]map[string]struct{})
 	if es := ctx.StringSlice("endpoints"); len(es) != 0 {
 		sets := make(map[string]map[string][2]int)
 		serversInfo, e := client.ServerInfo()
@@ -216,7 +222,7 @@ func mainAdminHeal(ctx *cli.Context) error {
 					if err != nil {
 						return err
 					}
-					if u.Host != info.Addr {
+					if u.Host != info.Addr && u.Host != "" {
 						continue
 					}
 					disksIndex[u.Path] = [2]int{j, k}
@@ -224,7 +230,6 @@ func mainAdminHeal(ctx *cli.Context) error {
 			}
 			sets[info.Addr] = disksIndex
 		}
-		fmt.Println(len(sets), sets)
 		for _, endpoint := range ctx.StringSlice("endpoints") {
 			var ip, port, path string
 			if idx := strings.Index(endpoint, "/"); idx != -1 {
@@ -242,17 +247,19 @@ func mainAdminHeal(ctx *cli.Context) error {
 			host := fmt.Sprintf("%s:%s", ip, port)
 			idx, ok := sets[host]
 			if !ok {
-				return fmt.Errorf("invalid endpoint %s, should be follow the pattern like 127.0.0.1:9000/data/path", endpoint)
+				return fmt.Errorf("invalid path in endpoint %s, should match the servers %+v", endpoint, sets)
 			}
 			if path == "" {
+				endpoints[host] = map[string]struct{}{}
 				for _, i := range idx {
 					opts.DisksIndex[i[0]] = append(opts.DisksIndex[i[0]], i[1])
 				}
 			} else {
 				i, ok := idx[path]
 				if !ok {
-					return fmt.Errorf("invalid path in endpoint %s, should be follow the pattern like 127.0.0.1:9000/data/path", endpoint)
+					return fmt.Errorf("invalid path in endpoint %s, should match the servers %+v", endpoint, sets)
 				}
+				endpoints[host] = map[string]struct{}{path: struct{}{}}
 				opts.DisksIndex[i[0]] = append(opts.DisksIndex[i[0]], i[1])
 			}
 		}
@@ -274,17 +281,52 @@ func mainAdminHeal(ctx *cli.Context) error {
 			fatalIf(err.Trace(aliasedURL), "Cannot initialize admin client.")
 			return nil
 		}
+		var wg sync.WaitGroup
+		trapCh := signalTrap(os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
+		ctx2, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			select {
+			case <-ctx2.Done():
+				return
+			case <-trapCh:
+				cancel()
+			}
+		}()
+		ui := objectListHealData{
+			uiData: uiData{Bucket: bucket,
+				Prefix: prefix,
+				Client: client,
+				// ClientToken:           healStart.ClientToken,
+				// ForceStart:            forceStart,
+				HealOpts:              &opts,
+				ObjectsByOnlineDrives: make(map[int]int64),
+				HealthCols:            make(map[col]int64),
+				CurChan:               cursorAnimate(),
+			},
+			Started: time.Now(),
+			Total:   0,
+		}
+		ch := ui.Display(ctx2, &wg, endpoints)
 		functions := make([]objectHandleFunc, len(clients))
 		for idx := range clients {
 			c := clients[idx]
 			functions[idx] = func(bucket, key string) error {
 				res, err := c.HealObject(bucket, key, opts)
-				fmt.Printf(".")
-				// fmt.Printf("%+v\n", res)
-				return err
+				if err != nil {
+					return err
+				}
+				select {
+				case ch <- &res:
+				default:
+				}
+				return nil
 			}
 		}
-		return healObjectList(workDir, objectList, functions, ctx.Int("qps"))
+		e := healObjectList(ctx2, workDir, objectList, functions, ctx.Int("qps"))
+		cancel()
+		wg.Wait()
+		return e
 	}
 
 	singleObject := ctx.Bool("single-object")
