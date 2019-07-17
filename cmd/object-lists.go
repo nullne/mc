@@ -480,7 +480,6 @@ func (ol *objectListHeal) run(ctx context.Context, functions []objectHandleFunc,
 			wg.Add(1)
 			go func(fn objectHandleFunc, limiter *rate.Limiter, wg *sync.WaitGroup) {
 				defer wg.Done()
-				log.Println("fuck")
 				for obj := range ch {
 					if err := limiter.Wait(ctx); err != nil {
 						// log.Println(err)
