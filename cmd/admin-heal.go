@@ -49,7 +49,7 @@ var adminHealFlags = []cli.Flag{
 		Value: scanNormalMode,
 	},
 	cli.StringSliceFlag{
-		Name:  "endpoints, e",
+		Name:  "endpoint, e",
 		Usage: "heal the object on the specified endpoint, Please make sure data is missing on the endpoint",
 	},
 	cli.BoolFlag{
@@ -128,6 +128,12 @@ EXAMPLES:
     5. Issue a dry-run heal operation to inspect objects health under 'dir' prefix
        $ {{.HelpName}} --recursive --dry-run play/testbucket/dir/
 
+    6. Heal objects listed in the file object-list-file with qps 10
+       $ {{.HelpName}} --object-list object-list-file --qps 10 play
+	
+    7. Heal only parts specified by endpoint of object (that's healing sepecified sets)
+       $ {{.HelpName}} --scan deep --endpoint 127.0.0.1/data1 --object-list path object-list-file
+
 `,
 }
 
@@ -205,7 +211,7 @@ func mainAdminHeal(ctx *cli.Context) error {
 		DisksIndex: make(map[int][]int),
 	}
 	endpoints := make(map[string]map[string]struct{})
-	if es := ctx.StringSlice("endpoints"); len(es) != 0 {
+	if es := ctx.StringSlice("endpoint"); len(es) != 0 {
 		sets := make(map[string]map[string][2]int)
 		serversInfo, e := client.ServerInfo()
 		if e != nil {
@@ -230,7 +236,7 @@ func mainAdminHeal(ctx *cli.Context) error {
 			}
 			sets[info.Addr] = disksIndex
 		}
-		for _, endpoint := range ctx.StringSlice("endpoints") {
+		for _, endpoint := range ctx.StringSlice("endpoint") {
 			var ip, port, path string
 			if idx := strings.Index(endpoint, "/"); idx != -1 {
 				path = endpoint[idx:]
@@ -293,6 +299,16 @@ func mainAdminHeal(ctx *cli.Context) error {
 				cancel()
 			}
 		}()
+
+		ol, e := newObjectListHeal(workDir, objectList)
+		if err != nil {
+			return e
+		}
+
+		status, e := ol.healStatus(true)
+		if e != nil {
+			return e
+		}
 		ui := objectListHealData{
 			uiData: uiData{Bucket: bucket,
 				Prefix: prefix,
@@ -305,26 +321,41 @@ func mainAdminHeal(ctx *cli.Context) error {
 				CurChan:               cursorAnimate(),
 			},
 			Started: time.Now(),
-			Total:   0,
+			Total:   int64(processNumber(status)),
 		}
 		ch := ui.Display(ctx2, &wg, endpoints)
 		functions := make([]objectHandleFunc, len(clients))
 		for idx := range clients {
 			c := clients[idx]
-			functions[idx] = func(bucket, key string) error {
+			functions[idx] = func(bucket, key string) byte {
 				res, err := c.HealObject(bucket, key, opts)
 				if err != nil {
-					return err
+					return healStatusFailed
 				}
 				select {
 				case ch <- &res:
 				default:
 				}
-				return nil
+				return healStatusFrom(res)
 			}
 		}
-		e := healObjectList(ctx2, workDir, objectList, functions, ctx.Int("qps"))
+		ol.run(ctx2, functions, ctx.Int("qps"))
 		cancel()
+		status, e = ol.healStatus(false)
+		if e != nil {
+			return e
+		}
+		if e := ol.Close(); e != nil {
+			return e
+		}
+		if missionComplete(status) {
+			if e := ol.Remove(); e != nil {
+				return e
+			}
+		} else {
+			fmt.Println(colorYellowBold("several objects are not healed, re-run the command to heal it"))
+		}
+		// e := healObjectList(ctx2, workDir, objectList, functions, ctx.Int("qps"))
 		wg.Wait()
 		return e
 	}

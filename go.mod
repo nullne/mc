@@ -24,6 +24,7 @@ require (
 	github.com/segmentio/go-prompt v1.2.1-0.20161017233205-f0d19b6901ad
 	github.com/tidwall/match v1.0.1 // indirect
 	github.com/ugorji/go/codec v0.0.0-20190320090025-2dc34c0b8780 // indirect
+	go.uber.org/multierr v1.1.0
 	go.uber.org/zap v1.10.0 // indirect
 	golang.org/x/crypto v0.0.0-20190605123033-f99c8df09eb5
 	golang.org/x/net v0.0.0-20190603091049-60506f45cf65
