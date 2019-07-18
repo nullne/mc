@@ -301,7 +301,7 @@ func mainAdminHeal(ctx *cli.Context) error {
 		}()
 
 		ol, e := newObjectListHeal(workDir, objectList)
-		if err != nil {
+		if e != nil {
 			return e
 		}
 
@@ -364,7 +364,29 @@ func mainAdminHeal(ctx *cli.Context) error {
 	if singleObject {
 		res, err := client.HealObject(bucket, prefix, opts)
 		errorIf(probe.NewError(err), "Failed to heal single object %s/%s", bucket, prefix)
-		fmt.Printf("%+v\n", res)
+		fmt.Printf("type: %s, parity: %v, data: %v, disks: %v, sets: %v, size: %v\n", res.Type, res.ParityBlocks, res.DataBlocks, res.DiskCount, res.SetCount, res.ObjectSize)
+		count := 0
+		fmt.Println("Before:")
+		for _, d := range res.Before.Drives {
+			fmt.Printf("%20s: %-8s", d.Endpoint, d.State)
+			count++
+			if count >= 5 {
+				fmt.Printf("\n")
+				count = 0
+			}
+		}
+		fmt.Printf("\n\n")
+		fmt.Println("After:")
+		count = 0
+		for _, d := range res.After.Drives {
+			fmt.Printf("%20s: %-8s", d.Endpoint, d.State)
+			count++
+			if count >= 5 {
+				fmt.Printf("\n")
+				count = 0
+			}
+		}
+		fmt.Printf("\n")
 		return nil
 	}
 
