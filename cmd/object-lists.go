@@ -162,7 +162,7 @@ func printRes(item *madmin.HealResultItem) {
 	}
 }
 
-func (ui *objectListHealData) Display(ctx context.Context, wg *sync.WaitGroup, endpoints map[string]map[string]struct{}) chan *madmin.HealResultItem {
+func (ui *objectListHealData) Display(ctx context.Context, wg *sync.WaitGroup) chan *madmin.HealResultItem {
 	ch := make(chan *madmin.HealResultItem, 1000)
 	firstIter := true
 	wg.Add(1)
@@ -176,7 +176,7 @@ func (ui *objectListHealData) Display(ctx context.Context, wg *sync.WaitGroup, e
 			case <-ctx.Done():
 				return
 			case res := <-ch:
-				fakeHealResult(res, endpoints)
+				// fakeHealResult(res, endpoints)
 				ui.HealDuration = time.Now().Sub(ui.Started)
 				ui.updateStats(*res)
 
@@ -360,8 +360,30 @@ func (ui *objectListHealData) updateUI(item *madmin.HealResultItem) (err error) 
 // 1-byte status will be recored into status file
 type objectHandleFunc func(bucket, key string) (status byte)
 
+// @TODO
 func healStatusFrom(item madmin.HealResultItem) byte {
-	return healStatusOk
+	var err error
+	var afterCol col
+	h := newHRI(&item)
+	switch h.Type {
+	case madmin.HealItemMetadata, madmin.HealItemBucket:
+		_, afterCol, err = h.getReplicatedFileHCCChange()
+	default:
+		_, afterCol, err = h.getObjectHCCChange()
+	}
+	if err != nil {
+		return healStatusFailed
+	}
+	switch afterCol {
+	case colGreen:
+		return healStatusOk
+	case colRed, colYellow:
+		return healStatusMissingParts
+	case colGrey:
+		return healStatusCannnotBeHealed
+	default:
+		return healStatusWait
+	}
 }
 
 type objectListHeal struct {

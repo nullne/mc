@@ -323,7 +323,7 @@ func mainAdminHeal(ctx *cli.Context) error {
 			Started: time.Now(),
 			Total:   int64(processNumber(status)),
 		}
-		ch := ui.Display(ctx2, &wg, endpoints)
+		ch := ui.Display(ctx2, &wg)
 		functions := make([]objectHandleFunc, len(clients))
 		for idx := range clients {
 			c := clients[idx]
@@ -332,6 +332,7 @@ func mainAdminHeal(ctx *cli.Context) error {
 				if err != nil {
 					return healStatusFailed
 				}
+				fakeHealResult(&res, endpoints)
 				select {
 				case ch <- &res:
 				default:
