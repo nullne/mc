@@ -40,6 +40,7 @@ var adminCmd = cli.Command{
 		adminProfileCmd,
 		adminTopCmd,
 		adminMonitorCmd,
+		adminDumpCmd,
 	},
 }
 
