@@ -34,10 +34,10 @@ var (
 			Name:  "topic",
 			Usage: "kafka topic",
 		},
-		cli.StringFlag{
-			Name:  "username",
-			Usage: "set username if needed",
-		},
+		// cli.StringFlag{
+		// 	Name:  "username",
+		// 	Usage: "set username if needed",
+		// },
 		cli.StringFlag{
 			Name:  "output, o",
 			Value: "",
@@ -107,7 +107,7 @@ func mainDump(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	addr, username := ctx.String("addr"), ctx.String("username")
+	addr := ctx.String("addr")
 	clusterIDs := ctx.StringSlice("cluster-id")
 	inClusters := func(id string) bool {
 		for _, cid := range clusterIDs {
@@ -133,8 +133,9 @@ func mainDump(ctx *cli.Context) error {
 
 	var ch chan string
 	switch source {
-	case "hive":
-		ch, err = dumpFromHive(context.Background(), addr, username, since, until, inClusters)
+	// case "hive":
+	// 	username := ctx.String("username")
+	// 	ch, err = dumpFromHive(context.Background(), addr, username, since, until, inClusters)
 	case "kafka":
 		topic := ctx.String("topic")
 		ch, err = dumpFromKafka(context.Background(), addr, topic, since, until, inClusters)
