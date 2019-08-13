@@ -23,8 +23,8 @@ var (
 	dumpFlags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "source",
-			Value: "hive",
-			Usage: "from where to dump, available choices: hive(default)",
+			Value: "kafka",
+			Usage: "from where to dump, available choices: kafka(default)",
 		},
 		cli.StringFlag{
 			Name:  "addr",
@@ -46,11 +46,11 @@ var (
 		// filters
 		cli.StringFlag{
 			Name:  "since",
-			Usage: "start of the time range",
+			Usage: "start of the time range(CST), format like 2019-08-10 12:00:00:00",
 		},
 		cli.StringFlag{
 			Name:  "until",
-			Usage: "end of the time range",
+			Usage: "end of the time range(CST), format like 2019-08-10 12:00:00:00",
 		},
 		cli.StringSliceFlag{
 			Name:  "cluster-id, c",
@@ -65,7 +65,7 @@ var adminDumpCmd = cli.Command{
 	Usage:  "dump object list",
 	Action: mainDump,
 	// Before: setGlobadumpFromContext,
-	Flags: append(dumpFlags, globalFlags...),
+	Flags: dumpFlags,
 	CustomHelpTemplate: `NAME:
   {{.HelpName}} - {{.Usage}}
 
@@ -76,12 +76,16 @@ FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}
 EXAMPLES:
-   1. Dump object list of cluster 01 within the given time range from hive
-	  $ {{.HelpName}} dump --source hive --addr 10.compute-r630.bjs.p1staff.com:10000 --username hdp-common --since "2019-07-10 00:00:00" --until "2019-07-11 00:00:00" --cluster-id "01"
+   1. Dump object list of cluster 01 within the given time range from kafka
+	  $ {{.HelpName}} --source kafka --addr node.kafka.tt:9092 --topic "objects-meta-minio" --since "2019-07-10 00:00:00" --until "2019-07-11 00:00:00" --cluster-id "01" --output /tmp/objects-list-from-kafka
 `,
 }
 
 const dumpLayout = "2006-01-02 15:04:05 MST"
+
+func checkDumpSyntax(ctx *cli.Context) {
+	cli.ShowCommandHelpAndExit(ctx, "dump", 1) // last argument is exit code
+}
 
 // mainList - is a handler for mc dump command
 func mainDump(ctx *cli.Context) error {
@@ -92,7 +96,7 @@ func mainDump(ctx *cli.Context) error {
 	console.SetColor("Time", color.New(color.FgGreen))
 
 	// check 'dump' cli arguments.
-	checkListSyntax(ctx)
+	checkDumpSyntax(ctx)
 
 	// Set command flags from context.
 	since, err := time.Parse(dumpLayout, ctx.String("since")+" CST")
