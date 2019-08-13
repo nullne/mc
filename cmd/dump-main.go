@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -28,6 +29,10 @@ var (
 		cli.StringFlag{
 			Name:  "addr",
 			Usage: "address with corresponding type",
+		},
+		cli.StringFlag{
+			Name:  "topic",
+			Usage: "kafka topic",
 		},
 		cli.StringFlag{
 			Name:  "username",
@@ -76,7 +81,7 @@ EXAMPLES:
 `,
 }
 
-const dumpLayout = "2006-01-02 15:04:05"
+const dumpLayout = "2006-01-02 15:04:05 MST"
 
 // mainList - is a handler for mc dump command
 func mainDump(ctx *cli.Context) error {
@@ -90,11 +95,11 @@ func mainDump(ctx *cli.Context) error {
 	checkListSyntax(ctx)
 
 	// Set command flags from context.
-	since, err := time.Parse(dumpLayout, ctx.String("since"))
+	since, err := time.Parse(dumpLayout, ctx.String("since")+" CST")
 	if err != nil {
 		return err
 	}
-	until, err := time.Parse(dumpLayout, ctx.String("until"))
+	until, err := time.Parse(dumpLayout, ctx.String("until")+" CST")
 	if err != nil {
 		return err
 	}
@@ -127,7 +132,7 @@ func mainDump(ctx *cli.Context) error {
 	case "hive":
 		ch, err = dumpFromHive(context.Background(), addr, username, since, until, inClusters)
 	case "kafka":
-		topic := ctx.String("source")
+		topic := ctx.String("topic")
 		ch, err = dumpFromKafka(context.Background(), addr, topic, since, until, inClusters)
 	default:
 		return fmt.Errorf("source %s not supported", source)
@@ -150,16 +155,23 @@ func dumpFromKafka(ctx context.Context, addr, topic string, since, until time.Ti
 		return nil, err
 	}
 	defer conn.Close()
-	partitions, err := conn.ReadPartitions("topic")
+	partitions, err := conn.ReadPartitions(topic)
 	if err != nil {
 		return nil, err
 	}
 
 	ch := make(chan string, 1000)
 	ech := make(chan error, len(partitions))
+	var wg sync.WaitGroup
 	for _, p := range partitions {
-		go fetchKafkaMessages(ctx, ch, ech, addr, topic, p.ID, since, until, inClusters)
+		wg.Add(1)
+		go fetchKafkaMessages(ctx, &wg, ch, ech, addr, topic, p.ID, since, until, inClusters)
 	}
+	go func() {
+		wg.Wait()
+		close(ch)
+		close(ech)
+	}()
 	go func() {
 		for err := range ech {
 			fmt.Println(err)
@@ -168,7 +180,8 @@ func dumpFromKafka(ctx context.Context, addr, topic string, since, until time.Ti
 	return ch, nil
 }
 
-func fetchKafkaMessages(ctx context.Context, ch chan string, ech chan error, addr, topic string, partitionID int, since, until time.Time, inClusters func(string) bool) {
+func fetchKafkaMessages(ctx context.Context, wg *sync.WaitGroup, ch chan string, ech chan error, addr, topic string, partitionID int, since, until time.Time, inClusters func(string) bool) {
+	defer wg.Done()
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:   []string{addr},
 		Topic:     topic,
