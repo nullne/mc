@@ -8,6 +8,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/fatih/color v1.7.0
+	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/gopherjs/gopherjs v0.0.0-20190430165422-3e4dfb77656c // indirect
 	github.com/hashicorp/go-version v1.1.0
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
@@ -24,10 +25,13 @@ require (
 	github.com/posener/complete v1.2.1
 	github.com/rjeczalik/notify v0.9.2
 	github.com/segmentio/go-prompt v1.2.1-0.20161017233205-f0d19b6901ad
+	github.com/segmentio/kafka-go v0.3.1
 	github.com/smartystreets/assertions v1.0.0 // indirect
 	github.com/smartystreets/goconvey v0.0.0-20190710185942-9d28bd7c0945 // indirect
 	github.com/tidwall/match v1.0.1 // indirect
+	github.com/tsuna/gohbase v0.0.0-20190809153024-c154997cc002 // indirect
 	github.com/ugorji/go/codec v0.0.0-20190320090025-2dc34c0b8780 // indirect
+	gitlab.p1staff.com/common-tech/tantan-object-storage v1.0.3
 	gitlab.p1staff.com/common-tech/tantan-object-storage/cluster v1.0.0
 	go.uber.org/multierr v1.1.0
 	go.uber.org/zap v1.10.0 // indirect
