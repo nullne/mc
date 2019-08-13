@@ -38,6 +38,10 @@ var (
 			Name:  "dangerous",
 			Usage: "allow site-wide removal of objects",
 		},
+		cli.BoolFlag{
+			Name:  "file-volume",
+			Usage: "the minio server is based on file volume, so that delete the bucket directly rather than delete all objects at first",
+		},
 	}
 )
 
@@ -110,6 +114,34 @@ func checkRbSyntax(ctx *cli.Context) {
 				"This operation results in **site-wide** removal of buckets. If you are really sure, retry this command with ‘--force’ and ‘--dangerous’ flags.")
 		}
 	}
+}
+
+func deleteBucketDirectly(url string) *probe.Error {
+	contentCh := make(chan *clientContent)
+	targetAlias, targetURL, _ := mustExpandAlias(url)
+	clnt, pErr := newClientFromAlias(targetAlias, targetURL)
+	if pErr != nil {
+		return pErr
+	}
+	errorCh := clnt.Remove(false, true, contentCh)
+	// Remove the given url since the user will always want to remove it.
+	alias, _ := url2Alias(targetURL)
+	if alias != "" {
+		contentCh <- &clientContent{URL: *newClientURL(targetURL)}
+	}
+
+	// Finish removing and print all the remaining errors
+	close(contentCh)
+	for pErr := range errorCh {
+		switch pErr.ToGoError().(type) {
+		case PathInsufficientPermission:
+			errorIf(pErr.Trace(url), "Failed to remove `"+url+"`.")
+			// Ignore Permission error.
+			continue
+		}
+		return pErr
+	}
+	return nil
 }
 
 // deletes a bucket and all its contents
@@ -202,6 +234,7 @@ func mainRemoveBucket(ctx *cli.Context) error {
 	// check 'rb' cli arguments.
 	checkRbSyntax(ctx)
 	isForce := ctx.Bool("force")
+	fileVolume := ctx.Bool("file-volume")
 
 	// Additional command specific theme customization.
 	console.SetColor("RemoveBucket", color.New(color.FgGreen, color.Bold))
@@ -225,6 +258,11 @@ func mainRemoveBucket(ctx *cli.Context) error {
 				continue
 
 			}
+		}
+		if fileVolume {
+			e := deleteBucketDirectly(targetURL)
+			fatalIf(e.Trace(targetURL), "Failed to remove `"+targetURL+"`.")
+			return nil
 		}
 		isEmpty := true
 		for range clnt.List(true, false, DirNone) {

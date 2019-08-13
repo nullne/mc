@@ -76,6 +76,9 @@ type Client interface {
 	// Delete operations
 	Remove(isIncomplete, isRemoveBucket bool, contentCh <-chan *clientContent) (errorCh <-chan *probe.Error)
 
+	// Delete buckets directly
+	// RemoveBucket(bucket string) error
+
 	// GetURL returns back internal url
 	GetURL() clientURL
 }
