@@ -37,6 +37,7 @@ var adminCmd = cli.Command{
 		adminCredsCmd,
 		adminConfigCmd,
 		adminHealCmd,
+		adminDiskMaintenanceCmd,
 		adminProfileCmd,
 		adminTopCmd,
 		adminMonitorCmd,
