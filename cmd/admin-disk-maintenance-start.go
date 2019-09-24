@@ -24,7 +24,7 @@ var adminDiskMaintenanceStartCmd = cli.Command{
 	Usage:           "start disk maintenance",
 	Action:          mainAdminDiskMaintenanceStart,
 	Before:          setGlobalsFromContext,
-	Flags:           append(adminDiskMaintenanceStartFlags, globalFlags...),
+	Flags:           append(adminDiskMaintenanceStartFlags, adminDiskMaintenanceFinishFlags...),
 	HideHelpCommand: true,
 	CustomHelpTemplate: `NAME:
   {{.HelpName}} - {{.Usage}}
@@ -44,21 +44,39 @@ EXAMPLES:
 
 // mainAdminDiskMaintenanceStart - the entry function of profile command
 func mainAdminDiskMaintenanceStart(ctx *cli.Context) error {
+	es := ctx.StringSlice("endpoint")
+	all := ctx.Bool("all-nodes")
+	if len(ctx.Args()) != 1 ||
+		(!all && len(es) == 0) {
+		cli.ShowCommandHelpAndExit(ctx, "start", 1) // last argument is exit code
+	}
+
 	// Get the alias parameter from cli
 	args := ctx.Args()
 	aliasedURL := args.Get(0)
 
 	// Create a new Minio Admin Client
-	client, err := newAdminClient(aliasedURL)
+	clients, err := newAdminClients(aliasedURL)
 	if err != nil {
 		fatalIf(err.Trace(aliasedURL), "Cannot initialize admin client.")
 		return nil
 	}
 	rate := ctx.Float64("rate")
 	timeRange := ctx.String("time-range")
-	cmdErr := client.StartDiskMaintenance(rate, timeRange)
-	fatalIf(probe.NewError(cmdErr), "Unable to start disk maintenance.")
+	esMap := make(map[string]bool, len(es))
+	for _, e := range es {
+		esMap[e] = true
+	}
 
-	console.Infoln("Disk maintenance successfully started.")
+	for _, client := range clients {
+		if !all && !esMap[client.EndpointAddr()] {
+			continue
+		}
+		if cmdErr := client.StartDiskMaintenance(rate, timeRange); cmdErr != nil {
+			fatalIf(probe.NewError(cmdErr), "Unable to start disk maintenance.")
+		} else {
+			console.Infoln("Disk maintenance successfully started.")
+		}
+	}
 	return nil
 }

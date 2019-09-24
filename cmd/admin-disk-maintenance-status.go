@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/minio/cli"
+	json "github.com/minio/mc/pkg/colorjson"
+	"github.com/minio/mc/pkg/console"
 	"github.com/minio/mc/pkg/probe"
 )
 
@@ -20,7 +20,7 @@ var adminDiskMaintenanceStatusCmd = cli.Command{
 	Usage:           "get disk maintenance status",
 	Action:          mainAdminDiskMaintenanceStatus,
 	Before:          setGlobalsFromContext,
-	Flags:           append(adminDiskMaintenanceStatusFlags, globalFlags...),
+	Flags:           adminDiskMaintenanceStatusFlags,
 	HideHelpCommand: true,
 	CustomHelpTemplate: `NAME:
   {{.HelpName}} - {{.Usage}}
@@ -32,7 +32,7 @@ FLAGS:
   {{range .VisibleFlags}}{{.}}
   {{end}}
 EXAMPLES:
-    1. Status disk maintenance
+    1. Get status of disk maintenance
        $ {{.HelpName}} myminio
 
 `,
@@ -40,19 +40,29 @@ EXAMPLES:
 
 // mainAdminDiskMaintenanceStatus - the entry function of profile command
 func mainAdminDiskMaintenanceStatus(ctx *cli.Context) error {
+	if len(ctx.Args()) != 1 {
+		cli.ShowCommandHelpAndExit(ctx, "status", 1) // last argument is exit code
+	}
 	// Get the alias parameter from cli
 	args := ctx.Args()
 	aliasedURL := args.Get(0)
 
 	// Create a new Minio Admin Client
-	client, err := newAdminClient(aliasedURL)
+	clients, err := newAdminClients(aliasedURL)
 	if err != nil {
-		fatalIf(err.Trace(aliasedURL), "Cannot initialize admin client.")
+		fatal(err.Trace(aliasedURL), "Cannot initialize admin client.")
 		return nil
 	}
-	status, cmdErr := client.GetDiskMaintenanceStatus()
-	fmt.Println(cmdErr)
-	fatalIf(probe.NewError(cmdErr), "Unable to get status of disk maintenance.")
-	fmt.Println(status)
+	for _, client := range clients {
+		status, cmdErr := client.GetDiskMaintenanceStatus()
+		if cmdErr != nil {
+			fatal(probe.NewError(cmdErr), "Unable to get status of disk maintenance on %s", client.EndpointAddr())
+		} else {
+			bytes, err := json.MarshalIndent(status, "", " ")
+			fatalIf(probe.NewError(err), "Unable to marshal to JSON.")
+			console.Println(client.EndpointAddr())
+			console.Println(string(bytes))
+		}
+	}
 	return nil
 }
