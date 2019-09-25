@@ -21,10 +21,10 @@ var adminDiskMaintenanceFlags = []cli.Flag{
 		Usage: "refresh maintenance status every interval",
 		Value: time.Second,
 	},
-	cli.BoolFlag{
-		Name:  "serial, s",
-		Usage: "maitain disks on nodes one by one",
-	},
+	// cli.BoolFlag{
+	// 	Name:  "serial, s",
+	// 	Usage: "maitain disks on nodes one by one",
+	// },
 }
 
 var adminDiskMaintenanceCmd = cli.Command{
@@ -301,6 +301,20 @@ func maintainSingleNode(ctx context.Context, client *madmin.AdminClient, duratio
 	go func() {
 		defer close(ch)
 		var result diskMaintenanceResult
+
+		// make sure result is not empty
+		select {
+		case result = <-ch2:
+		case err := <-errCh:
+			if err == nil {
+				break
+			}
+			result.Message = err.Error()
+			result.Status = MaintenanceStatusFailed
+		case <-ctx.Done():
+			return
+		}
+
 		for {
 			select {
 			case res, ok := <-ch2:
