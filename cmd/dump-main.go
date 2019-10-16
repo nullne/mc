@@ -84,7 +84,7 @@ EXAMPLES:
 const dumpLayout = "2006-01-02 15:04:05 MST"
 
 func checkDumpSyntax(ctx *cli.Context) {
-	cli.ShowCommandHelpAndExit(ctx, "dump", 1) // last argument is exit code
+	// cli.ShowCommandHelpAndExit(ctx, "dump", 1) // last argument is exit code
 }
 
 // mainList - is a handler for mc dump command
