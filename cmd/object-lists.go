@@ -545,8 +545,8 @@ func (ol *objectListHeal) scan(ctx context.Context) chan handleObject {
 			if !needProcess(bs[0]) {
 				continue
 			}
-			ss := strings.Split(scanner.Text(), ",")
-			if len(ss) != 2 {
+			ss := strings.SplitN(scanner.Text(), ",", 3)
+			if len(ss) < 2 {
 				log.Println("invalid format")
 				continue
 			}
