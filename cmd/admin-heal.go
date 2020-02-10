@@ -69,6 +69,10 @@ var adminHealFlags = []cli.Flag{
 		Name:  "work-dir",
 		Usage: "working directory when healing objects in list, used to record healing progress, default is ~/.mc",
 	},
+	cli.StringFlag{
+		Name:  "dump",
+		Usage: "dump objects with specified type",
+	},
 	cli.BoolFlag{
 		Name:  "recursive, r",
 		Usage: "heal recursively",
@@ -132,7 +136,7 @@ EXAMPLES:
        $ {{.HelpName}} --object-list object-list-file --qps 10 play
 	
     7. Heal only parts specified by endpoint of object (that's healing sepecified sets)
-       $ {{.HelpName}} --scan deep --endpoint 127.0.0.1/data1 --object-list path object-list-file
+       $ {{.HelpName}} --scan deep --endpoint 127.0.0.1/data1 --object-list path-to-object-list-file play
 
 `,
 }
@@ -303,6 +307,10 @@ func mainAdminHeal(ctx *cli.Context) error {
 		ol, e := newObjectListHeal(workDir, objectList)
 		if e != nil {
 			return e
+		}
+
+		if t := ctx.String("dump"); t != "" {
+			return ol.dumpList(t)
 		}
 
 		status, e := ol.healStatus(true)

@@ -458,6 +458,54 @@ func newObjectListHeal(workingDir, objectListFile string) (ol objectListHeal, er
 	return ol, nil
 }
 
+func (ol objectListHeal) dumpList(ts string) error {
+	var t byte
+	switch ts {
+	case "wait":
+		t = healStatusWait
+	case "failed":
+		t = healStatusFailed
+	case "ok":
+		t = healStatusOk
+	case "missingParts":
+		t = healStatusMissingParts
+	case "cannotBeHealed":
+		t = healStatusCannnotBeHealed
+	default:
+		return fmt.Errorf("unknow %s", ts)
+	}
+	if _, err := ol.objectsFile.Seek(0, io.SeekStart); err != nil {
+		log.Println(err)
+		return err
+	}
+
+	scanner := bufio.NewScanner(ol.objectsFile)
+	var offset int64 = -1
+	bs := make([]byte, 1)
+	for scanner.Scan() {
+		offset++
+		_, err := ol.statusFile.ReadAt(bs, offset)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		if bs[0] != t {
+			continue
+		}
+		ss := strings.SplitN(scanner.Text(), ",", 3)
+		if len(ss) < 2 {
+			log.Println("invalid format")
+			continue
+		}
+		fmt.Println(ss[0], ",", ss[1])
+	}
+	if err := scanner.Err(); err != nil {
+		log.Println(err)
+		return err
+	}
+	return nil
+}
+
 func (ol objectListHeal) healStatus(p bool) (map[byte]int, error) {
 	if _, err := ol.statusFile.Seek(0, io.SeekStart); err != nil {
 		return nil, err
