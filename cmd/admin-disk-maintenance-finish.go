@@ -12,7 +12,7 @@ var adminDiskMaintenanceFinishFlags = []cli.Flag{
 		Usage: "endpoint",
 	},
 	cli.BoolFlag{
-		Name:  "all-nodes",
+		Name:  "all-nodes, a",
 		Usage: "finish disk maintenance on all nodes",
 	},
 }
